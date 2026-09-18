@@ -1,0 +1,23 @@
+{
+  "images" : [
+    {
+      "filename" : "claude-16.png",
+      "idiom" : "mac",
+      "scale" : "1x"
+    },
+    {
+      "filename" : "claude-32.png",
+      "idiom" : "mac",
+      "scale" : "2x"
+    },
+    {
+      "filename" : "claude-48.png",
+      "idiom" : "mac",
+      "scale" : "3x"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}

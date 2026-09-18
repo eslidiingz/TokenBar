@@ -1,0 +1,69 @@
+# ---- macOS ----
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.Spotlight-V100
+.Trashes
+
+# ---- Xcode: build output / derived data ----
+build/
+DerivedData/
+*.o
+*.a
+*.app
+*.dSYM
+*.dSYM.zip
+*.ipa
+*.xcarchive
+*.hmap
+*.moved-aside
+*.swiftsourceinfo
+
+# ---- Xcode: per-user state (ไม่ควร share ระหว่างเครื่อง) ----
+xcuserdata/
+*.xcuserstate
+*.xcuserdatad
+*.xcscmblueprint
+*.xccheckout
+*.perspectivev3
+*.pbxuser
+*.mode1v3
+*.mode2v3
+
+# ---- Swift Package Manager ----
+.build/
+.swiftpm/
+Package.resolved
+Packages/
+
+# ---- CocoaPods / Carthage (เผื่ออนาคต) ----
+Pods/
+Carthage/Build/
+Carthage/Checkouts/
+
+# ---- Signing / credentials (ห้ามขึ้น git เด็ดขาด) ----
+*.mobileprovision
+*.provisionprofile
+*.p12
+*.pem
+*.key
+*.cer
+*.certSigningRequest
+.env
+.env.*
+secrets.plist
+Secrets.swift
+
+# ---- Fastlane ----
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+fastlane/test_output
+
+# ---- Editors / tooling ----
+.idea/
+.vscode/
+*.swp
+*~
