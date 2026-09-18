@@ -5,7 +5,7 @@ import Combine
 // The view model is main-actor isolated and every delegate callback here
 // already runs on the main thread, so the whole class is isolated to it.
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var popover: NSPopover?
     private var hostingView: NSHostingView<MenuBarLabel>?
@@ -34,7 +34,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             // A status item with a custom hosted view does not get the
             // system-styled bezel other menu bar items show — it gets the
             // legacy dark fill, which reads as a black flash for the length of
-            // the click. The label draws the highlight itself instead.
+            // the click. Nothing takes its place: the label's own coloured
+            // capsules already read as one item, and an open-state wash over
+            // them only muddied them.
             (button.cell as? NSButtonCell)?.highlightsBy = []
 
             button.action = #selector(togglePopover)
@@ -43,7 +45,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
         let popover = NSPopover()
         popover.behavior = .transient
-        popover.delegate = self
         popover.contentViewController = NSHostingController(rootView: MenuBarView(viewModel: viewModel))
         self.popover = popover
 
@@ -67,7 +68,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         hostingView.layoutSubtreeIfNeeded()
         // The ideal width, not the larger of the two measurements: anything
         // wider than the label leaves dead space inside the item, which throws
-        // off both the highlight and where the popover's arrow lands.
+        // off where the popover's arrow lands.
         let ideal = hostingView.intrinsicContentSize.width
         let width = ideal > 0 ? ideal : hostingView.fittingSize.width
         guard width > 0 else { return }
@@ -81,18 +82,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             popover.performClose(nil)
         } else {
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            viewModel.isPopoverShown = true
             // A status item is not a regular window, so the popover needs the
             // app brought forward or it opens behind whatever was in use.
             NSApp.activate(ignoringOtherApps: true)
         }
-    }
-
-    /// The popover is `.transient`, so it can also close itself from a click
-    /// outside it without ever going through `togglePopover` — this is the one
-    /// place that reliably fires either way.
-    func popoverDidClose(_ notification: Notification) {
-        viewModel.isPopoverShown = false
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

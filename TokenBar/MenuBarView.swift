@@ -4,6 +4,10 @@ import SwiftUI
 struct ProviderIcon: View {
     let provider: AIProvider
     var size: CGFloat = 15
+    /// Overrides the provider's own rendering mode. The menu bar forces the
+    /// silhouette on for both providers, because there the icon sits on a
+    /// coloured fill rather than on the bar itself.
+    var template: Bool?
 
     var body: some View {
         image
@@ -14,39 +18,76 @@ struct ProviderIcon: View {
 
     private var image: Image {
         let base = Image(provider.iconAssetName)
-        return provider.iconIsTemplate ? base.renderingMode(.template) : base
+        let asTemplate = template ?? provider.iconIsTemplate
+        return asTemplate ? base.renderingMode(.template) : base
     }
+}
+
+/// Each provider's fill in the menu bar — the brand hues, laid on as a wash
+/// rather than a solid: the colour only has to be enough to tell the two
+/// groups apart, and filled in fully they read as two loud buttons parked in
+/// the bar. Because the wash lets the bar through, the label keeps the menu
+/// bar's own text colour instead of a fixed white, which is what holds the
+/// contrast up on a light bar as well as a dark one.
+extension AIProvider {
+    var menuBarTint: Color {
+        switch self {
+        case .claude: return Color(red: 0.85, green: 0.47, blue: 0.34)
+        case .codex: return Color(red: 0.06, green: 0.64, blue: 0.50)
+        }
+    }
+
+    static let menuBarTintOpacity = 0.75
 }
 
 /// The compact label shown in the actual menu bar: each provider's logo
 /// followed by its short-window and weekly percentages, so both horizons are
 /// readable without opening the popover. The popover is for detail only.
+///
+/// Each provider rides on its own coloured capsule, which is what separates
+/// the two groups at a glance — otherwise the four figures read as one run of
+/// digits and the logos have to be decoded to tell which pair is which.
 struct MenuBarLabel: View {
     @ObservedObject var viewModel: UsageViewModel
+    @Environment(\.colorScheme) private var colorScheme
+
+    /// Darker than the bar under a dark menu bar, lighter under a light one:
+    /// either way it moves the plate away from the text colour.
+    private var scrim: Color {
+        colorScheme == .dark ? Color.black.opacity(0.22) : Color.white.opacity(0.45)
+    }
 
     var body: some View {
-        // Wider gap between providers than between one provider's own figures,
-        // so the pairs read as pairs.
-        HStack(spacing: 10) {
+        HStack(spacing: 5) {
             ForEach(viewModel.visibleProviders, id: \.self) { provider in
                 HStack(spacing: 5) {
-                    ProviderIcon(provider: provider, size: provider == .claude ? 16 : 15)
+                    // Silhouette even for Claude: its own orange mark would
+                    // sink into the wash behind it, and as a silhouette it
+                    // tracks the text colour the way the Codex mark does.
+                    ProviderIcon(
+                        provider: provider,
+                        size: provider == .claude ? 15 : 14,
+                        template: true
+                    )
+
                     percentages(for: provider)
                 }
+                .padding(.horizontal, 7)
+                .padding(.vertical, 2)
+                // Two layers, tint over scrim. The tint alone at this opacity
+                // sits lighter than the bar it covers, which is what softened
+                // the digits; the scrim pushes the plate the other way from
+                // the text — away from white on a dark bar, away from black on
+                // a light one — so regular weight stays crisp.
+                .background(
+                    provider.menuBarTint.opacity(AIProvider.menuBarTintOpacity),
+                    in: Capsule()
+                )
+                .background(scrim, in: Capsule())
             }
         }
         .font(.system(size: 13))
-        .padding(.horizontal, 9)
-        // AppKit's own bezel is switched off in AppDelegate — a status item
-        // with a custom hosted view gets the legacy dark fill instead of the
-        // system-styled one, which reads as a black flash. This draws the
-        // translucent "menu is open" state other menu bar items show.
-        .background {
-            if viewModel.isPopoverShown {
-                RoundedRectangle(cornerRadius: 5)
-                    .fill(Color.primary.opacity(0.16))
-            }
-        }
+        .padding(.horizontal, 4)
         .fixedSize()
     }
 
@@ -159,25 +200,31 @@ private struct UsageSection: View {
                 }
 
                 Spacer()
+
+                if usage.needsLogin {
+                    Button("Sign in", action: onSignIn)
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                }
             }
 
-            if usage.needsLogin {
-                Button("Sign in", action: onSignIn)
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-            } else if let errorMessage = usage.errorMessage {
-                Text(errorMessage)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
-            } else if usage.windows.isEmpty {
-                Text("Loading…")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else {
-                ForEach(usage.windows) { window in
-                    UsageWindowRow(window: window)
+            // While signed out the header's button says everything; the
+            // underlying "no credentials" text would only repeat it.
+            if !usage.needsLogin {
+                if let errorMessage = usage.errorMessage {
+                    Text(errorMessage)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                } else if usage.windows.isEmpty {
+                    Text("Loading…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(usage.windows) { window in
+                        UsageWindowRow(window: window)
+                    }
                 }
             }
         }

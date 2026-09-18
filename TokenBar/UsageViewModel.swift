@@ -12,13 +12,6 @@ final class UsageViewModel: ObservableObject {
     /// menu bar and the popover instead of showing a permanent error.
     @Published private(set) var codexAvailable = CodexUsageService.isConfigured
 
-    /// Whether the popover is open, so the menu bar label can draw the
-    /// highlighted background itself. AppKit's own bezel is switched off in
-    /// AppDelegate because a status item with a custom hosted view gets the
-    /// legacy dark fill rather than the system-styled one, which reads as a
-    /// black flash over the menu bar.
-    @Published var isPopoverShown = false
-
     private let claudeService = UsageService()
     private let codexService = CodexUsageService()
 

@@ -1,4 +1,5 @@
 import Foundation
+import Security
 
 /// Reads Claude Code's local OAuth credentials and calls Anthropic's usage
 /// endpoint, the same one the `claude` CLI itself uses to show rate limits.
@@ -10,6 +11,8 @@ final class UsageService {
     private static let credentialsFileURL = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".claude/.credentials.json")
 
+    private static let keychainServicePrefix = "Claude Code-credentials"
+
     /// Matches the shape Claude Code stores, in the Keychain and on disk alike:
     /// { "claudeAiOauth": { "accessToken": ..., "refreshToken": ..., "expiresAt": ... } }
     private struct ClaudeCredentialsWrapper: Decodable {
@@ -19,6 +22,19 @@ final class UsageService {
             let expiresAt: Double?
         }
         let claudeAiOauth: ClaudeOAuth
+
+        /// `expiresAt` is epoch milliseconds.
+        var isExpired: Bool {
+            guard let expiresAt = claudeAiOauth.expiresAt else { return false }
+            return Date(timeIntervalSince1970: expiresAt / 1000) <= Date()
+        }
+    }
+
+    /// One place a login might be stored, read lazily so a source that prompts
+    /// or fails costs nothing until it is actually reached.
+    private struct CredentialSource {
+        let name: String
+        let read: () throws -> String
     }
 
     /// Why one credential source could not supply a token, kept short so the
@@ -30,9 +46,7 @@ final class UsageService {
     func fetchUsage() async throws -> ProviderUsage {
         let credentials = try loadCredentials()
 
-        // `expiresAt` is epoch milliseconds.
-        if let expiresAt = credentials.claudeAiOauth.expiresAt,
-           Date(timeIntervalSince1970: expiresAt / 1000) <= Date() {
+        if credentials.isExpired {
             throw UsageServiceError.tokenExpired
         }
 
@@ -71,31 +85,78 @@ final class UsageService {
 
     // MARK: - Credentials
 
-    /// Prefers the login Keychain, where Claude Code stores credentials by
-    /// default, and falls back to the on-disk file some installs use instead.
+    /// Takes the first source holding a live login, so a stale entry left by an
+    /// earlier account never shadows the current one.
     private func loadCredentials() throws -> ClaudeCredentialsWrapper {
         var failures: [String] = []
+        var expired: ClaudeCredentialsWrapper?
 
-        for load in [readKeychainJSON, readCredentialsFileJSON] {
+        for source in credentialSources() {
             do {
-                let (raw, source) = try load()
-                do {
-                    return try JSONDecoder().decode(ClaudeCredentialsWrapper.self, from: Data(raw.utf8))
-                } catch {
-                    throw SourceUnavailable(reason: "\(source): unexpected JSON")
+                let raw = try source.read()
+                guard let decoded = try? JSONDecoder()
+                    .decode(ClaudeCredentialsWrapper.self, from: Data(raw.utf8)) else {
+                    failures.append("\(source.name): no Claude login")
+                    continue
+                }
+
+                if decoded.isExpired {
+                    expired = expired ?? decoded
+                    failures.append("\(source.name): expired")
+                } else {
+                    return decoded
                 }
             } catch let failure as SourceUnavailable {
                 failures.append(failure.reason)
             }
         }
 
+        // An expired login still tells the user more than "never signed in".
+        if let expired { return expired }
         throw UsageServiceError.credentialsNotFound(detail: failures.joined(separator: " / "))
     }
 
-    private func readKeychainJSON() throws -> (String, String) {
+    /// Recent Claude Code versions scope the Keychain item per install, so the
+    /// service name carries a suffix ("Claude Code-credentials-1a2b3c4d") while
+    /// the unsuffixed entry lives on holding only MCP tokens — reading just that
+    /// one makes a signed-in user look signed out. Some installs write the file
+    /// instead, which stays as the last resort.
+    private func credentialSources() -> [CredentialSource] {
+        // Descending order reaches the suffixed services before the legacy one.
+        let services = Self.claudeKeychainServices().sorted(by: >)
+
+        return services.map { service in
+            CredentialSource(name: "keychain(\(service))") { try Self.readKeychain(service: service) }
+        } + [CredentialSource(name: "~/.claude/.credentials.json", read: Self.readCredentialsFile)]
+    }
+
+    /// Item attributes are readable without the confirmation prompt the secret
+    /// itself triggers, which makes this safe to run on every refresh.
+    private static func claudeKeychainServices() -> [String] {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecMatchLimit as String: kSecMatchLimitAll,
+            kSecReturnAttributes as String: true
+        ]
+
+        var result: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+              let items = result as? [[String: Any]] else {
+            return []
+        }
+
+        let services = items.compactMap { $0[kSecAttrService as String] as? String }
+            .filter { $0.hasPrefix(keychainServicePrefix) }
+        return Array(Set(services))
+    }
+
+    /// Shelling out to `security` rather than reading the item directly: the
+    /// Keychain ACL is granted per binary, and Apple's stays stable where a
+    /// locally signed TokenBar would re-prompt after every rebuild.
+    private static func readKeychain(service: String) throws -> String {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/security")
-        process.arguments = ["find-generic-password", "-s", "Claude Code-credentials", "-w"]
+        process.arguments = ["find-generic-password", "-s", service, "-w"]
 
         let output = Pipe()
         process.standardOutput = output
@@ -117,14 +178,13 @@ final class UsageService {
             throw SourceUnavailable(reason: "keychain: no entry")
         }
 
-        return (raw, "keychain")
+        return raw
     }
 
-    private func readCredentialsFileJSON() throws -> (String, String) {
-        let url = Self.credentialsFileURL
-        guard let raw = try? String(contentsOf: url, encoding: .utf8) else {
+    private static func readCredentialsFile() throws -> String {
+        guard let raw = try? String(contentsOf: credentialsFileURL, encoding: .utf8) else {
             throw SourceUnavailable(reason: "~/.claude/.credentials.json: missing")
         }
-        return (raw, "~/.claude/.credentials.json")
+        return raw
     }
 }

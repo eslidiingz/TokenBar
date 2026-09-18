@@ -314,14 +314,14 @@ enum CodexUsageServiceError: LocalizedError, LoginRecoverableError {
 
 enum LaunchError: LocalizedError {
     case commandNotFound(String)
-    case processFailed(String, Int32)
+    case terminalOpenFailed
 
     var errorDescription: String? {
         switch self {
         case .commandNotFound(let name):
             return "Couldn't find the `\(name)` CLI on this Mac."
-        case .processFailed(let name, let status):
-            return "`\(name)` exited with status \(status)."
+        case .terminalOpenFailed:
+            return "Couldn't open Terminal to run the login command."
         }
     }
 }
