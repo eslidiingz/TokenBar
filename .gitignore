@@ -67,3 +67,6 @@ fastlane/test_output
 .vscode/
 *.swp
 *~
+
+# ---- Exported release builds (published as GitHub Releases) ----
+TokenBar */
